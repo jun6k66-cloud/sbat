@@ -2,7 +2,7 @@ name: 3분 단위 스퀘어맵 실시간 동기화
 
 on:
   schedule:
-    - cron: '*/3 * * * *' # 3분마다 전 세계 깃허브 서버가 이 작업을 실행합니다.
+    - cron: '*/3 * * * *' # 3분마다 자동 실행
   workflow_dispatch: # 수동 실행 버튼 생성
 
 jobs:
@@ -11,24 +11,22 @@ jobs:
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
+        with:
+          allow-unauthenticated-repositories: true
 
-      - name: 위어드호스트 SFTP에서 스퀘어맵 파일 직접 다운로드
+      - name: 위어드호스트에서 폴더 및 파일 통째로 미러링 다운로드
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
           SFTP_USER: ${{ secrets.SFTP_USER }}
           SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
         run: |
-          # 보안 연결을 위해 위어드호스트의 SSH 키를 검증 없이 수락하도록 설정
-          mkdir -p ~/.ssh
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          # 하위 폴더와 대량의 이미지 타일을 완벽하게 동기화하기 위해 lftp를 설치합니다.
+          sudo apt-get update && sudo apt-get install -y lftp
           
-          # sshpass를 설치하여 비밀번호를 자동으로 입력하게 만듭니다.
-          sudo apt-get update && sudo apt-get install -y sshpass
-          
-          # SFTP 서버에 접속하여 '/config/squaremap/web' 폴더의 모든 파일(*)을 내 깃허브 공간으로 가져옵니다.
-          sshpass -p "$SFTP_PASSWORD" sftp -P 2022 "$SFTP_USER@$SFTP_HOST" <<EOF
-          cd /config/squaremap/web
-          get -r *
+          # lftp를 이용해 위어드호스트의 스퀘어맵 웹 폴더를 현재 깃허브 공간('.')으로 통째로 복사(mirror)합니다.
+          lftp -u "$SFTP_USER","$SFTP_PASSWORD" sftp://"$SFTP_HOST":2022 <<EOF
+          set sftp:connect-program "ssh -a -x -o StrictHostKeyChecking=no"
+          mirror --reverse --delete --parallel=5 /config/squaremap/web ./
           exit
           EOF
 
@@ -36,6 +34,9 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
+          
+          # 최초 실행 시 브랜치가 꼬이지 않도록 처리
+          git checkout -b main || git checkout main || true
+          
           git add .
-          # 변경 사항이 있을 때만 커밋하고 푸시하여 꼬임을 방지합니다.
-          git diff --quiet && git diff --staged --quiet || (git commit -m "실시간 맵 자동 최신화 (${{ github.run_id }})" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "실시간 맵 폴더 구조 자동 최신화 (${{ github.run_id }})" && git push origin main)
