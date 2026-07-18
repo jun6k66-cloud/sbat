@@ -12,22 +12,30 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
 
-      - name: 위어드호스트 SFTP에서 스퀘어맵 폴더 직접 다운로드 (노압축)
+      - name: 위어드호스트 SFTP에서 스퀘어맵 폴더 직접 다운로드 (자동 경로)
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
           SFTP_USER: ${{ secrets.SFTP_USER }}
           SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
         run: |
-          # 순정 sshpass 및 sftp 연동 환경 세팅
           sudo apt-get update && sudo apt-get install -y sshpass
           mkdir -p ~/.ssh
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
-          echo "=== 순정 SFTP 연결 및 스퀘어맵 파일 수집 시작 ==="
-          # 홈/서버/squaremap/web 경로에 맞춰 SFTP 접속 후 다운로드합니다.
-          # -n 옵션을 주어 이미 가져온 파일은 패스하고 새 파일만 빠르게 가져옵니다.
+          echo "=== 1단계: 서버 내 'web' 폴더의 실제 SFTP 절대경로 자동 추적 ==="
+          # SFTP 접속 전, SSH 전송을 통해 서버 내부의 정확한 'web' 폴더 위치를 검색합니다.
+          TARGET_DIR=$(sshpass -p "$SFTP_PASSWORD" ssh -p 2022 -o StrictHostKeyChecking=no "$SFTP_USER@$SFTP_HOST" "find . -type d -name web -print -quit" | sed 's|^\./||')
+          
+          if [ -z "$TARGET_DIR" ]; then
+            echo "오류: 서버 내부에서 'web' 이름의 폴더를 발견하지 못했습니다. 경로를 확인해 주세요."
+            exit 1
+          fi
+          echo "=> 자동 탐색된 진짜 SFTP 경로: $TARGET_DIR"
+
+          echo "=== 2단계: 자동 추적된 경로에서 최신 파일만 골라 다운로드 ==="
+          # 알아낸 실제 경로($TARGET_DIR)를 직접 주입하여 SFTP 다운로드를 수행합니다.
           sshpass -p "$SFTP_PASSWORD" sftp -P 2022 -o ConnectTimeout=15 "$SFTP_USER@$SFTP_HOST" <<EOF
-          cd squaremap/web
+          cd "$TARGET_DIR"
           get -n -r *
           exit
           EOF
@@ -40,5 +48,4 @@ jobs:
           git checkout -b main || git checkout main || true
           
           git add .
-          # 바뀐 이미지 조각(타일)이 있을 때만 골라서 깃허브 저장소에 업데이트합니다.
-          git diff --quiet && git diff --staged --quiet || (git commit -m "실시간 맵 자동 최신화 (${{ github.run_id }})" && git push origin main)
+          git diff --quiet && git quiet || (git commit -m "실시간 맵 자동 최신화 (${{ github.run_id }})" && git push origin main)
