@@ -12,21 +12,23 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
 
-      - name: 위어드호스트에서 스퀘어맵 폴더 통째로 복사 (미러링)
+      - name: 위어드호스트 SFTP에서 스퀘어맵 폴더 직접 다운로드 (노압축)
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
           SFTP_USER: ${{ secrets.SFTP_USER }}
           SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
         run: |
-          sudo apt-get update && sudo apt-get install -y lftp
-          
-          # lftp를 실행하여 위어드호스트 서버(squaremap/web) -> 깃허브 현재 폴더(./)로 데이터를 긁어옵니다.
-          lftp -u "$SFTP_USER","$SFTP_PASSWORD" sftp://"$SFTP_HOST":2022 <<EOF
-          set sftp:connect-program "ssh -a -x -o StrictHostKeyChecking=no"
-          echo "=== [서버 접속 성공] 현재 최상위 폴더 목록 ==="
-          ls
-          echo "=== 스퀘어맵 파일 동기화 시작 ==="
-          mirror squaremap/web ./
+          # 순정 sshpass 및 sftp 연동 환경 세팅
+          sudo apt-get update && sudo apt-get install -y sshpass
+          mkdir -p ~/.ssh
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+          echo "=== 순정 SFTP 연결 및 스퀘어맵 파일 수집 시작 ==="
+          # 홈/서버/squaremap/web 경로에 맞춰 SFTP 접속 후 다운로드합니다.
+          # -n 옵션을 주어 이미 가져온 파일은 패스하고 새 파일만 빠르게 가져옵니다.
+          sshpass -p "$SFTP_PASSWORD" sftp -P 2022 -o ConnectTimeout=15 "$SFTP_USER@$SFTP_HOST" <<EOF
+          cd squaremap/web
+          get -n -r *
           exit
           EOF
 
@@ -38,4 +40,5 @@ jobs:
           git checkout -b main || git checkout main || true
           
           git add .
-          git diff --quiet && git diff --staged --quiet || (git commit -m "실시간 맵 폴더 구조 자동 최신화 (${{ github.run_id }})" && git push origin main)
+          # 바뀐 이미지 조각(타일)이 있을 때만 골라서 깃허브 저장소에 업데이트합니다.
+          git diff --quiet && git diff --staged --quiet || (git commit -m "실시간 맵 자동 최신화 (${{ github.run_id }})" && git push origin main)
