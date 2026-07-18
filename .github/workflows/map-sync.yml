@@ -23,8 +23,8 @@ jobs:
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
           echo "=== 1단계: 서버 내 'web' 폴더의 실제 SFTP 절대경로 자동 추적 ==="
-          # SFTP 접속 전, SSH 전송을 통해 서버 내부의 정확한 'web' 폴더 위치를 검색합니다.
-          TARGET_DIR=$(sshpass -p "$SFTP_PASSWORD" ssh -p 2022 -o StrictHostKeyChecking=no "$SFTP_USER@$SFTP_HOST" "find . -type d -name web -print -quit" | sed 's|^\./||')
+          # 포트 번호를 2028로 수정했습니다.
+          TARGET_DIR=$(sshpass -p "$SFTP_PASSWORD" ssh -p 2028 -o StrictHostKeyChecking=no "$SFTP_USER@$SFTP_HOST" "find . -type d -name web -print -quit" | sed 's|^\./||')
           
           if [ -z "$TARGET_DIR" ]; then
             echo "오류: 서버 내부에서 'web' 이름의 폴더를 발견하지 못했습니다. 경로를 확인해 주세요."
@@ -33,8 +33,8 @@ jobs:
           echo "=> 자동 탐색된 진짜 SFTP 경로: $TARGET_DIR"
 
           echo "=== 2단계: 자동 추적된 경로에서 최신 파일만 골라 다운로드 ==="
-          # 알아낸 실제 경로($TARGET_DIR)를 직접 주입하여 SFTP 다운로드를 수행합니다.
-          sshpass -p "$SFTP_PASSWORD" sftp -P 2022 -o ConnectTimeout=15 "$SFTP_USER@$SFTP_HOST" <<EOF
+          # 포트 번호를 2028로 수정했습니다.
+          sshpass -p "$SFTP_PASSWORD" sftp -P 2028 -o ConnectTimeout=15 "$SFTP_USER@$SFTP_HOST" <<EOF
           cd "$TARGET_DIR"
           get -n -r *
           exit
@@ -48,4 +48,5 @@ jobs:
           git checkout -b main || git checkout main || true
           
           git add .
-          git diff --quiet && git quiet || (git commit -m "실시간 맵 자동 최신화 (${{ github.run_id }})" && git push origin main)
+          # 기존 코드의 오타 'git quiet'를 제거하고 올바른 조건문(변경사항이 있으면 커밋/푸시)으로 수정했습니다.
+          git diff --quiet && git diff --cached --quiet || (git commit -m "실시간 맵 자동 최신화 (${{ github.run_id }})" && git push origin main)
