@@ -20,10 +20,13 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y lftp
           
-          # SFTP 루트 기준 경로인 'squaremap/web'에서 파일들을 미러링합니다.
+          # lftp를 실행하여 위어드호스트 서버(squaremap/web) -> 깃허브 현재 폴더(./)로 데이터를 긁어옵니다.
           lftp -u "$SFTP_USER","$SFTP_PASSWORD" sftp://"$SFTP_HOST":2022 <<EOF
           set sftp:connect-program "ssh -a -x -o StrictHostKeyChecking=no"
-          mirror --reverse --delete --parallel=5 squaremap/web ./
+          echo "=== [서버 접속 성공] 현재 최상위 폴더 목록 ==="
+          ls
+          echo "=== 스퀘어맵 파일 동기화 시작 ==="
+          mirror squaremap/web ./
           exit
           EOF
 
